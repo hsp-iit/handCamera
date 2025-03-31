@@ -1,8 +1,9 @@
 # handCamera
 Simple minimal application to stream Meta Quest 3 RGB camera and hand/poses.
 <video width="600" controls>
-  <source src="demo.mp4" type="demo/mp4">
+  <source src="https://github.com/steb6/handCamera/blob/main/demo.mp4" type="mp4">
 </video>
+
 Huge thanks to [this](https://www.youtube.com/watch?v=A2ZhJt-SIBU&t=324s&ab_channel=Skarredghost) video.
 
 ### Installation
