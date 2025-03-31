@@ -29,6 +29,12 @@ public class WebcamTextureAssigner : MonoBehaviour
     private OVRSkeleton leftHandSkeleton;
     private OVRSkeleton rightHandSkeleton;
     private bool handsInitialized;
+    [System.Serializable]
+    public class HandDataContainer
+    {
+        public HandData leftHand;
+        public HandData rightHand;
+    }
 
     [System.Serializable]
     public class HandData
@@ -151,20 +157,24 @@ public class WebcamTextureAssigner : MonoBehaviour
 
     void SendHandData()
     {
-        var handData = new
+        // Ensure non-null HandData even if skeleton is null
+        HandData left = GetHandData(leftHandSkeleton, "Left") ?? new HandData { handType = "Left", bones = new BoneData[0] };
+        HandData right = GetHandData(rightHandSkeleton, "Right") ?? new HandData { handType = "Right", bones = new BoneData[0] };
+
+        var container = new HandDataContainer
         {
-            leftHand = GetHandData(leftHandSkeleton, "Left"),
-            rightHand = GetHandData(rightHandSkeleton, "Right")
+            leftHand = left,
+            rightHand = right
         };
 
-        string json = JsonUtility.ToJson(handData);
+        string json = JsonUtility.ToJson(container);
         byte[] jsonData = Encoding.UTF8.GetBytes(json);
         SendData(jsonData, 1);
     }
 
     HandData GetHandData(OVRSkeleton skeleton, string handType)
     {
-        if (skeleton == null) return null;
+        if (skeleton == null || !skeleton.IsInitialized) return null;
 
         var boneData = skeleton.Bones.Select(bone => new BoneData
         {
