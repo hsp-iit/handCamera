@@ -32,10 +32,16 @@ public class WebcamTextureAssigner : MonoBehaviour
     [System.Serializable]
     public class HandDataContainer
     {
+        public HeadData head;
         public HandData leftHand;
         public HandData rightHand;
     }
-
+    [System.Serializable]
+    public class HeadData
+    {
+        public float px, py, pz;
+        public float rx, ry, rz, rw;
+    }
     [System.Serializable]
     public class HandData
     {
@@ -157,12 +163,24 @@ public class WebcamTextureAssigner : MonoBehaviour
 
     void SendHandData()
     {
+        // Get head data
+        HeadData headData = new HeadData();
+        Transform headTransform = Camera.main.transform;
+        headData.px = headTransform.position.x;
+        headData.py = headTransform.position.y;
+        headData.pz = headTransform.position.z;
+        headData.rx = headTransform.rotation.x;
+        headData.ry = headTransform.rotation.y;
+        headData.rz = headTransform.rotation.z;
+        headData.rw = headTransform.rotation.w;
+
         // Ensure non-null HandData even if skeleton is null
         HandData left = GetHandData(leftHandSkeleton, "Left") ?? new HandData { handType = "Left", bones = new BoneData[0] };
         HandData right = GetHandData(rightHandSkeleton, "Right") ?? new HandData { handType = "Right", bones = new BoneData[0] };
 
         var container = new HandDataContainer
         {
+            head = headData,
             leftHand = left,
             rightHand = right
         };
