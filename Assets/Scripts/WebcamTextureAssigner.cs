@@ -4,7 +4,11 @@ using UnityEngine;
 using System.Net.Sockets;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Linq;
+using System.Threading.Tasks;
+using System;
+using System.Net.WebSockets;
 
 /// <summary>
 /// Assigns the <see cref="WebCamTexture"/> of the Quest camera
@@ -24,6 +28,8 @@ public class WebcamTextureAssigner : MonoBehaviour
     private Texture2D texture;
     WebCamTextureManager webCamTextureManager = null;
     WebCamTexture webCamTexture = null;
+    private ClientWebSocket webSocket;
+    private CancellationTokenSource cancellationTokenSource;
 
     // Hand tracking variables
     private OVRSkeleton leftHandSkeleton;
@@ -88,28 +94,40 @@ public class WebcamTextureAssigner : MonoBehaviour
         // Hand tracking initialization
         yield return InitializeHandTracking();
 
-        // UDP initialization
-        InitializeUDP();
+        // WebSocket initialization
+        yield return InitializeWebSocket();
     }
 
-    void InitializeUDP(){
-        // Read server_ip from a text file, if there is no file use fixed ip
-        string path = Application.persistentDataPath.ToString() + "/metaCub_IP.txt";
-        UnityEngine.Debug.Log("Ip path: " + path);
 
-        // Check if the file exists
+    async Task InitializeWebSocket()
+    {
+        string path = Application.persistentDataPath.ToString() + "/metaCub_IP.txt";
+        UnityEngine.Debug.Log("WebSocket IP path: " + path);
+
         string server_ip;
         if (System.IO.File.Exists(path))
         {
-            // If file exists, read IP from the file
             server_ip = System.IO.File.ReadAllText(path).Trim();
-            UnityEngine.Debug.Log("Using IP from file: " + server_ip);
-            writeEndPoint = new IPEndPoint(IPAddress.Parse(server_ip), writePort);
-		    writer = new UdpClient();
+            UnityEngine.Debug.Log("Using WebSocket IP from file: " + server_ip);
+
+            webSocket = new ClientWebSocket();
+            cancellationTokenSource = new CancellationTokenSource();
+
+            try
+            {
+                Uri serverUri = new Uri($"ws://{server_ip}:{writePort}");
+                await webSocket.ConnectAsync(serverUri, cancellationTokenSource.Token);
+                UnityEngine.Debug.Log("WebSocket connected to " + serverUri);
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("WebSocket connection failed: " + ex.Message);
+                Application.Quit();
+            }
         }
         else
         {
-            UnityEngine.Debug.Log("Cant find IP");
+            UnityEngine.Debug.Log("Cannot find WebSocket IP file");
             Application.Quit();
         }
     }
@@ -146,18 +164,34 @@ public class WebcamTextureAssigner : MonoBehaviour
     void Update()
     {
         // Convert the texture to a Texture2D
-        if (webCamTexture != null) {
+        if (webCamTexture != null)
+        {
             texture.SetPixels32(webCamTexture.GetPixels32());
             texture.Apply();
             // Encode the texture to a compressed format (JPEG or PNG)
-            byte[] compressedData = texture.EncodeToJPG(10); // 50 is the quality, adjust as needed
-            // Send the compressed data over UDP
-            writer.Send(compressedData, compressedData.Length, writeEndPoint);
+            byte[] compressedData = texture.EncodeToJPG(80); // PNG is lossless
+            // Send the compressed data over WebSocket
+            SendWebSocketData(compressedData);
         }
         // Send hand data
         if (handsInitialized)
         {
             SendHandData();
+        }
+    }
+
+    async void SendWebSocketData(byte[] data)
+    {
+        if (webSocket != null && webSocket.State == WebSocketState.Open)
+        {
+            try
+            {
+                await webSocket.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Binary, true, cancellationTokenSource.Token);
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("WebSocket send failed: " + ex.Message);
+            }
         }
     }
 
@@ -187,7 +221,7 @@ public class WebcamTextureAssigner : MonoBehaviour
 
         string json = JsonUtility.ToJson(container);
         byte[] jsonData = Encoding.UTF8.GetBytes(json);
-        SendData(jsonData, 1);
+        SendWebSocketData(jsonData);
     }
 
     HandData GetHandData(OVRSkeleton skeleton, string handType)
@@ -221,12 +255,30 @@ public class WebcamTextureAssigner : MonoBehaviour
         writer.Send(packet, packet.Length, writeEndPoint);
     }
 
-    void OnDestroy()
+    async void OnDestroy()
     {
-        if (writer != null)
+        if (webSocket != null)
         {
-            writer.Close();
-            writer = null;
+            try
+            {
+                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("WebSocket close failed: " + ex.Message);
+            }
+            finally
+            {
+                webSocket.Dispose();
+                webSocket = null;
+            }
+        }
+
+        if (cancellationTokenSource != null)
+        {
+            cancellationTokenSource.Cancel();
+            cancellationTokenSource.Dispose();
+            cancellationTokenSource = null;
         }
     }
 }
